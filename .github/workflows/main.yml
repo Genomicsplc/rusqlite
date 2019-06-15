@@ -37,8 +37,8 @@ jobs:
           targets: ${{ matrix.target }}
 
       - run: cargo build --features bundled --workspace --all-targets --verbose
-      - run: cargo test --features bundled --workspace --all-targets --verbose
-      - run: cargo test --features bundled --workspace --doc --verbose
+      - run: cargo test --features bundled --workspace --all-targets --exclude dummy-extension --verbose
+      - run: cargo test --features bundled --workspace --doc --exclude dummy-extension --verbose
 
       - name: Test Features
         # TODO: clang is installed on these -- but `bindgen` can't find it...
