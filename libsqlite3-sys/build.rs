@@ -444,7 +444,6 @@ mod build_loadable_extension {
     fn try_vcpkg() -> Option<HeaderLocation> {
         None
     }
-
 }
 
 #[cfg(not(feature = "buildtime_bindgen"))]
@@ -462,12 +461,8 @@ mod bindings {
         "bindgen-bindings/bindgen_3.7.7",
         #[cfg(feature = "min_sqlite_version_3_7_16")]
         "bindgen-bindings/bindgen_3.7.16",
-        #[cfg(feature = "min_sqlite_version_3_13_0")]
-        "bindgen-bindings/bindgen_3.13.0",
         #[cfg(feature = "min_sqlite_version_3_20_0")]
         "bindgen-bindings/bindgen_3.20.0",
-        #[cfg(feature = "min_sqlite_version_3_26_0")]
-        "bindgen-bindings/bindgen_3.26.0",
     ];
 
     pub fn write_to_out_dir(_header: HeaderLocation, out_path: &Path) {
@@ -491,7 +486,6 @@ mod bindings {
             ""
         }
     }
-
 }
 
 #[cfg(feature = "buildtime_bindgen")]
@@ -656,9 +650,9 @@ mod bindings {
 
             #[cfg(feature = "loadable_extension_embedded")]
             {
-                // an embedded loadable extension is one in which the rust code will be linked in to
-                // external code that implements the loadable extension and exports the sqlite3_api
-                // interface as a symbol
+                // an embedded loadable extension is one in which the rust code will be linked
+                // in to external code that implements the loadable extension
+                // and exports the sqlite3_api interface as a symbol
                 output.push_str(
                     r#"
 
