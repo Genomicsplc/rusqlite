@@ -45,8 +45,6 @@ sqlcipher = ["libsqlite3-sys/sqlcipher"]
 unlock_notify = ["libsqlite3-sys/unlock_notify"]
 # xSavepoint, xRelease and xRollbackTo: 3.7.7 (2011-06-23)
 vtab = ["libsqlite3-sys/min_sqlite_version_3_7_7", "lazy_static"]
-# xShadowName: 3.26.0
-vtab_v3 = ["libsqlite3-sys/min_sqlite_version_3_7_16", "vtab"]
 csvtab = ["csv", "vtab"]
 # session extension: 3.13.0
 session = ["libsqlite3-sys/min_sqlite_version_3_13_0", "libsqlite3-sys/session", "hooks"]
