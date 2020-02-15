@@ -372,7 +372,6 @@ rusqlite was built against SQLite {} but the runtime SQLite version is {}. To fi
     target_arch = "wasm32",
     feature = "loadable_extension",
     feature = "loadable_extension_embedded",
-    feature = "non_threadsafe"
 )))]
 static SQLITE_INIT: std::sync::Once = std::sync::Once::new();
 
@@ -394,7 +393,6 @@ pub static BYPASS_SQLITE_INIT: AtomicBool = AtomicBool::new(false);
     target_arch = "wasm32",
     feature = "loadable_extension",
     feature = "loadable_extension_embedded",
-    feature = "non_threadsafe"
 ))]
 fn ensure_safe_sqlite_threading_mode() -> Result<()> {
     Ok(())
@@ -404,7 +402,6 @@ fn ensure_safe_sqlite_threading_mode() -> Result<()> {
     target_arch = "wasm32",
     feature = "loadable_extension",
     feature = "loadable_extension_embedded",
-    feature = "non_threadsafe"
 )))]
 fn ensure_safe_sqlite_threading_mode() -> Result<()> {
     // Ensure SQLite was compiled in thredsafe mode.
