@@ -27,7 +27,8 @@ function generate_bindgen_binding() {
   find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec rm {} \;
   env LIBSQLITE3_SYS_BUNDLING=1 cargo build --features "$features" --no-default-features
   find "$SCRIPT_DIR/../target" -type f -name bindgen.rs -exec cp {} $target_file \;
-  # TODO rustfmt $target_file
+  # rerun rustfmt after (possibly) adding wrappers
+  rustfmt $target_file
 }
 
 # Regenerate bindgen files

@@ -200,22 +200,14 @@ impl From<HeaderLocation> for String {
         match header {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
-<<<<<<< HEAD
                 let mut header = env::var(format!("{}_INCLUDE_DIR", prefix)).unwrap_or_else(|_| {
                     panic!(
                         "{}_INCLUDE_DIR must be set if {}_LIB_DIR is set",
                         prefix, prefix
                     )
                 });
-                header.push_str("/sqlite3.h");
-=======
-                let mut header = env::var(format!("{}_INCLUDE_DIR", prefix)).expect(&format!(
-                    "{}_INCLUDE_DIR must be set if {}_LIB_DIR is set",
-                    prefix, prefix
-                ));
-                header.push_str("/");
+                header.push('/');
                 header.push_str(header_file());
->>>>>>> 92fa703... add support for sqlite loadable extensions
                 header
             }
             HeaderLocation::Wrapper => wrapper_file().into(),
@@ -463,10 +455,8 @@ mod bindings {
     use bindgen::callbacks::{IntKind, ParseCallbacks};
 
     use std::fs::OpenOptions;
-    use std::io::copy;
     use std::io::Write;
     use std::path::Path;
-    use std::process::{Command, Stdio};
 
     #[derive(Debug)]
     struct SqliteTypeChooser;
@@ -496,7 +486,7 @@ mod bindings {
         let mut bindings = bindgen::builder()
             .header(header.clone())
             .parse_callbacks(Box::new(SqliteTypeChooser))
-            .rustfmt_bindings(false); // we'll run rustfmt after (possibly) adding wrappers
+            .rustfmt_bindings(true);
 
         if cfg!(feature = "unlock_notify") {
             bindings = bindings.clang_arg("-DSQLITE_ENABLE_UNLOCK_NOTIFY");
@@ -716,7 +706,7 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = 0 as *mut sqlite3_api_ro
 
         // read stdout of rustfmt and write it to bindings file at out_path
         copy(&mut rustfmt_child_stdout, &mut file)
-            .expect(&format!("Could not write to {:?}", out_path));
+            .unwrap_or_else(|_| panic!("Could not write to {:?}", out_path));
 
         let status = rustfmt_child
             .wait()
@@ -864,6 +854,5 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = 0 as *mut sqlite3_api_ro
             }
         };
         return format!("{}\n\n", wrapper_tokens.to_string());
->>>>>>> 92fa703... add support for sqlite loadable extensions
     }
 }
