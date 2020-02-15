@@ -56,7 +56,7 @@ mod build_bundled {
 
         #[cfg(feature = "buildtime_bindgen")]
         {
-            use super::{bindings, HeaderLocation};
+            use super::{bindings, header_file, HeaderLocation};
             let header = HeaderLocation::FromPath(format!("sqlite3/{}", header_file()).to_owned());
             bindings::write_to_out_dir(header, out_path);
         }
@@ -344,6 +344,7 @@ mod build_linked {
     }
 }
 
+#[cfg(feature = "loadable_extension")]
 mod build_loadable_extension {
     use pkg_config;
 
