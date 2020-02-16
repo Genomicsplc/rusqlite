@@ -324,7 +324,6 @@ mod build_linked {
 }
 
 mod build_loadable_extension {
-
     use super::{bindings, env_prefix, header_file, HeaderLocation};
     use std::env;
     use std::path::Path;
@@ -416,7 +415,7 @@ mod bindings {
             PREBUILT_BINDGEN_PATHS[PREBUILT_BINDGEN_PATHS.len() - 1],
             prebuilt_bindgen_ext()
         );
-        fs::copy(in_path.to_owned(), out_path).expect(&format!(
+        fs::copy(in_path.to_owned(), out_path).unwrap_or_else(|_| panic!(
             "Could not copy bindings to output directory from {}",
             in_path
         ));
@@ -567,7 +566,7 @@ mod bindings {
             .unwrap_or_else(|_| panic!("could not run bindgen on header {}", header))
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
-        let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
+        let output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
 
         // Get the list of API functions supported by sqlite3_api_routines,
         // set the corresponding sqlite3 api routine to be blacklisted in the
@@ -714,7 +713,7 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = 0 as *mut sqlite3_api_ro
                 }
             }
         }
-        return None;
+        None
     }
 
     #[cfg(feature = "loadable_extension")]
@@ -779,7 +778,7 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = 0 as *mut sqlite3_api_ro
             // transparently wrap variadic api functions.
             // generate specific set of args in place of
             // variadic for each function we care about.
-            let var_arg_types: Vec<Option<syn::Type>> = match api_fn_name.as_ref() {
+            let var_arg_types: Vec<Option<syn::Type>> = match api_fn_name {
                 "sqlite3_db_config" => {
                     let mut_int_type: syn::TypeReference = syn::parse2(quote!(&mut i32))
                         .expect("failed to parse mutable integer reference");
@@ -794,12 +793,9 @@ pub static mut sqlite3_api: *mut sqlite3_api_routines = 0 as *mut sqlite3_api_ro
                     syn::Ident::new(&format!("vararg{}", index + 1), field_ident.span());
                 let colon = Token![:](field_ident.span());
                 input.name = Some((input_ident, colon));
-                match var_arg_type.to_owned() {
-                    Some(t) => {
-                        input.ty = t;
-                    }
-                    None => {}
-                };
+                if let Some(t) = var_arg_type.to_owned() {
+                    input.ty = t;
+                }
                 api_fn_inputs.push(input);
             }
         }
