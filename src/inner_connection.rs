@@ -14,7 +14,6 @@ use crate::error::{error_from_handle, error_from_sqlite_code, Error};
 use crate::raw_statement::RawStatement;
 use crate::statement::Statement;
 use crate::unlock_notify;
-use crate::version::version_number;
 
 pub struct InnerConnection {
     pub db: *mut ffi::sqlite3,
@@ -326,7 +325,8 @@ pub static BYPASS_VERSION_CHECK: AtomicBool = AtomicBool::new(false);
 
 #[cfg(not(feature = "bundled"))]
 fn ensure_valid_sqlite_version() {
-    use crate::version::version;
+    use crate::version::{version, version_number};
+    use std::sync::atomic::Ordering;
 
     SQLITE_VERSION_CHECK.call_once(|| {
         let version_number = version_number();
@@ -404,6 +404,9 @@ fn ensure_safe_sqlite_threading_mode() -> Result<()> {
     feature = "loadable_extension_embedded",
 )))]
 fn ensure_safe_sqlite_threading_mode() -> Result<()> {
+    use crate::version::version_number;
+    use std::sync::atomic::Ordering;
+
     // Ensure SQLite was compiled in thredsafe mode.
     if unsafe { ffi::sqlite3_threadsafe() == 0 } {
         return Err(Error::SqliteSingleThreadedMode);
