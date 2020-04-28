@@ -447,7 +447,7 @@ impl Statement<'_> {
         Ok(())
     }
 
-    fn bind_parameters_named(&mut self, params: &[(&str, &dyn ToSql)]) -> Result<()> {
+    pub fn bind_parameters_named(&mut self, params: &[(&str, &dyn ToSql)]) -> Result<()> {
         for &(name, value) in params {
             if let Some(i) = self.parameter_index(name)? {
                 self.bind_parameter(value, i)?;
