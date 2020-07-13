@@ -258,7 +258,6 @@ pub trait CreateVTab: VTab {
 /// `feature = "vtab"` Index constraint operator.
 #[derive(Debug, PartialEq)]
 #[allow(non_snake_case, non_camel_case_types)]
-#[non_exhaustive]
 pub enum IndexConstraintOp {
     SQLITE_INDEX_CONSTRAINT_EQ,
     SQLITE_INDEX_CONSTRAINT_GT,
