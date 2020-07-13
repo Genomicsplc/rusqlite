@@ -1,5 +1,9 @@
 use super::ffi;
 use super::unlock_notify;
+#[cfg(not(any(
+    feature = "loadable_extension",
+    feature = "loadable_extension_embedded"
+)))]
 use super::StatementStatus;
 #[cfg(feature = "modern_sqlite")]
 use crate::util::SqliteMallocString;
@@ -28,6 +32,7 @@ pub struct RawStatement {
     statement_cache_key: Option<Arc<str>>,
 }
 
+#[allow(clippy::missing_safety_doc)]
 impl RawStatement {
     pub unsafe fn new(stmt: *mut ffi::sqlite3_stmt, tail: bool) -> RawStatement {
         RawStatement {
@@ -162,6 +167,10 @@ impl RawStatement {
         unsafe { SqliteMallocString::from_raw(ffi::sqlite3_expanded_sql(self.ptr)) }
     }
 
+    #[cfg(not(any(
+        feature = "loadable_extension",
+        feature = "loadable_extension_embedded"
+    )))]
     pub fn get_status(&self, status: StatementStatus, reset: bool) -> i32 {
         assert!(!self.ptr.is_null());
         unsafe { ffi::sqlite3_stmt_status(self.ptr, status as i32, reset as i32) }

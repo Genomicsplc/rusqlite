@@ -26,16 +26,18 @@ members = ["libsqlite3-sys"]
 [features]
 load_extension = []
 # hot-backup interface: 3.6.11 (2009-02-18)
-backup = ["libsqlite3-sys/min_sqlite_version_3_6_23"]
+backup = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 # sqlite3_blob_reopen: 3.7.4
-blob = ["libsqlite3-sys/min_sqlite_version_3_7_7"]
+blob = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 collation = []
 # sqlite3_create_function_v2: 3.7.3 (2010-10-08)
-functions = ["libsqlite3-sys/min_sqlite_version_3_7_7"]
+functions = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 # sqlite3_log: 3.6.23 (2010-03-09)
-trace = ["libsqlite3-sys/min_sqlite_version_3_6_23"]
+trace = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 bundled = ["libsqlite3-sys/bundled", "modern_sqlite"]
 buildtime_bindgen = ["libsqlite3-sys/buildtime_bindgen"]
+loadable_extension = ["libsqlite3-sys/loadable_extension"]
+loadable_extension_embedded = ["libsqlite3-sys/loadable_extension_embedded"]
 limits = []
 hooks = []
 i128_blob = ["byteorder"]
@@ -44,6 +46,14 @@ unlock_notify = ["libsqlite3-sys/unlock_notify"]
 # xSavepoint, xRelease and xRollbackTo: 3.7.7 (2011-06-23)
 vtab = ["libsqlite3-sys/min_sqlite_version_3_7_7", "lazy_static"]
 csvtab = ["csv", "vtab"]
+# estimatedRows in vtab sqlite3_index_info 3.8.2 and later
+vtab_estimated_rows = ["libsqlite3-sys/min_sqlite_version_3_8_2"]
+# idxFlags in vtab sqlite3_index_info 3.9.0 and later
+vtab_idx_flags = ["libsqlite3-sys/min_sqlite_version_3_9_0"]
+# colUsed in vtab sqlite3_index_info 3.10.0 and later
+vtab_col_used = ["libsqlite3-sys/min_sqlite_version_3_10_0"]
+# sqlite_vtab_collation in 3.22.0 and later
+vtab_collation = ["libsqlite3-sys/min_sqlite_version_3_22_0"]
 # pointer passing interfaces: 3.20.0
 array = ["vtab"]
 # session extension: 3.13.0
