@@ -485,6 +485,7 @@ mod bindings {
                 .blacklist_type("__gnuc_va_list")
                 .blacklist_type("__va_list_tag")
                 .blacklist_item("__GNUC_VA_LIST");
+        }
 
         // rust-bindgen does not handle CPP macros that alias functions, so
         // when using sqlite3ext.h to support loadable extensions, the macros
