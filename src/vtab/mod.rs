@@ -1,4 +1,4 @@
-//! Create virtual tables.
+//! `feature = "vtab"` Create virtual tables.
 //!
 //! Follow these steps to create your own virtual table:
 //! 1. Write implemenation of `VTab` and `VTabCursor` traits.
@@ -10,7 +10,6 @@
 //!
 //! (See [SQLite doc](http://sqlite.org/vtab.html))
 use std::borrow::Cow::{self, Borrowed, Owned};
-use std::ffi::CString;
 use std::marker::PhantomData;
 use std::marker::Sync;
 use std::os::raw::{c_char, c_int, c_void};
@@ -58,96 +57,111 @@ use crate::{str_to_cstring, Connection, Error, InnerConnection, Result};
 // ffi::sqlite3_vtab => VTab
 // ffi::sqlite3_vtab_cursor => VTabCursor
 
-/// Virtual table module
+/// `feature = "vtab"` Virtual table module
 ///
 /// (See [SQLite doc](https://sqlite.org/c3ref/module.html))
-#[repr(C)]
-pub struct Module<T: VTab> {
+#[repr(transparent)]
+pub struct Module<'vtab, T: VTab<'vtab>> {
     base: ffi::sqlite3_module,
-    phantom: PhantomData<T>,
+    phantom: PhantomData<&'vtab T>,
 }
 
-unsafe impl<T: VTab> Sync for Module<T> {}
+unsafe impl<'vtab, T: VTab<'vtab>> Send for Module<'vtab, T> {}
+unsafe impl<'vtab, T: VTab<'vtab>> Sync for Module<'vtab, T> {}
 
-/// Create a read-only virtual table implementation.
+union ModuleZeroHack {
+    bytes: [u8; std::mem::size_of::<ffi::sqlite3_module>()],
+    module: ffi::sqlite3_module,
+}
+
+// Used as a trailing initializer for sqlite3_module -- this way we avoid having
+// the build fail if buildtime_bindgen is on. This is safe, as bindgen-generated
+// structs are allowed to be zeroed.
+const ZERO_MODULE: ffi::sqlite3_module = unsafe {
+    ModuleZeroHack {
+        bytes: [0u8; std::mem::size_of::<ffi::sqlite3_module>()],
+    }
+    .module
+};
+
+/// `feature = "vtab"` Create a read-only virtual table implementation.
 ///
 /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-pub fn read_only_module<T: CreateVTab>(version: c_int) -> Module<T> {
+pub fn read_only_module<'vtab, T: CreateVTab<'vtab>>() -> &'static Module<'vtab, T> {
     // The xConnect and xCreate methods do the same thing, but they must be
     // different so that the virtual table is not an eponymous virtual table.
-    let ffi_module = ffi::sqlite3_module {
-        iVersion: version,
-        xCreate: Some(rust_create::<T>),
-        xConnect: Some(rust_connect::<T>),
-        xBestIndex: Some(rust_best_index::<T>),
-        xDisconnect: Some(rust_disconnect::<T>),
-        xDestroy: Some(rust_destroy::<T>),
-        xOpen: Some(rust_open::<T>),
-        xClose: Some(rust_close::<T::Cursor>),
-        xFilter: Some(rust_filter::<T::Cursor>),
-        xNext: Some(rust_next::<T::Cursor>),
-        xEof: Some(rust_eof::<T::Cursor>),
-        xColumn: Some(rust_column::<T::Cursor>),
-        xRowid: Some(rust_rowid::<T::Cursor>),
-        xUpdate: None,
-        xBegin: None,
-        xSync: None,
-        xCommit: None,
-        xRollback: None,
-        xFindFunction: None,
-        xRename: None,
-        xSavepoint: None,
-        xRelease: None,
-        xRollbackTo: None,
-        #[cfg(any(feature = "bundled", feature = "vtab_v3"))]
-        xShadowName: None,
-    };
-    Module {
-        base: ffi_module,
-        phantom: PhantomData::<T>,
+    &Module {
+        base: ffi::sqlite3_module {
+            // We don't use V3
+            iVersion: 2, // We don't use V2 or V3 features in read_only_module types
+            xCreate: Some(rust_create::<T>),
+            xConnect: Some(rust_connect::<T>),
+            xBestIndex: Some(rust_best_index::<T>),
+            xDisconnect: Some(rust_disconnect::<T>),
+            xDestroy: Some(rust_destroy::<T>),
+            xOpen: Some(rust_open::<T>),
+            xClose: Some(rust_close::<T::Cursor>),
+            xFilter: Some(rust_filter::<T::Cursor>),
+            xNext: Some(rust_next::<T::Cursor>),
+            xEof: Some(rust_eof::<T::Cursor>),
+            xColumn: Some(rust_column::<T::Cursor>),
+            xRowid: Some(rust_rowid::<T::Cursor>),
+            xUpdate: None,
+            xBegin: None,
+            xSync: None,
+            xCommit: None,
+            xRollback: None,
+            xFindFunction: None,
+            xRename: None,
+            xSavepoint: None,
+            xRelease: None,
+            xRollbackTo: None,
+            ..ZERO_MODULE
+        },
+        phantom: PhantomData::<&'vtab T>,
     }
 }
 
-/// Create an eponymous only virtual table implementation.
+/// `feature = "vtab"` Create an eponymous only virtual table implementation.
 ///
 /// Step 2 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-pub fn eponymous_only_module<T: VTab>(version: c_int) -> Module<T> {
+pub fn eponymous_only_module<'vtab, T: VTab<'vtab>>() -> &'static Module<'vtab, T> {
     // A virtual table is eponymous if its xCreate method is the exact same function
     // as the xConnect method For eponymous-only virtual tables, the xCreate
     // method is NULL
-    let ffi_module = ffi::sqlite3_module {
-        iVersion: version,
-        xCreate: None,
-        xConnect: Some(rust_connect::<T>),
-        xBestIndex: Some(rust_best_index::<T>),
-        xDisconnect: Some(rust_disconnect::<T>),
-        xDestroy: None,
-        xOpen: Some(rust_open::<T>),
-        xClose: Some(rust_close::<T::Cursor>),
-        xFilter: Some(rust_filter::<T::Cursor>),
-        xNext: Some(rust_next::<T::Cursor>),
-        xEof: Some(rust_eof::<T::Cursor>),
-        xColumn: Some(rust_column::<T::Cursor>),
-        xRowid: Some(rust_rowid::<T::Cursor>),
-        xUpdate: None,
-        xBegin: None,
-        xSync: None,
-        xCommit: None,
-        xRollback: None,
-        xFindFunction: None,
-        xRename: None,
-        xSavepoint: None,
-        xRelease: None,
-        xRollbackTo: None,
-        #[cfg(any(feature = "bundled", feature = "vtab_v3"))]
-        xShadowName: None,
-    };
-    Module {
-        base: ffi_module,
-        phantom: PhantomData::<T>,
+    &Module {
+        base: ffi::sqlite3_module {
+            // We don't use V3
+            iVersion: 2,
+            xCreate: None,
+            xConnect: Some(rust_connect::<T>),
+            xBestIndex: Some(rust_best_index::<T>),
+            xDisconnect: Some(rust_disconnect::<T>),
+            xDestroy: None,
+            xOpen: Some(rust_open::<T>),
+            xClose: Some(rust_close::<T::Cursor>),
+            xFilter: Some(rust_filter::<T::Cursor>),
+            xNext: Some(rust_next::<T::Cursor>),
+            xEof: Some(rust_eof::<T::Cursor>),
+            xColumn: Some(rust_column::<T::Cursor>),
+            xRowid: Some(rust_rowid::<T::Cursor>),
+            xUpdate: None,
+            xBegin: None,
+            xSync: None,
+            xCommit: None,
+            xRollback: None,
+            xFindFunction: None,
+            xRename: None,
+            xSavepoint: None,
+            xRelease: None,
+            xRollbackTo: None,
+            ..ZERO_MODULE
+        },
+        phantom: PhantomData::<&'vtab T>,
     }
 }
 
+/// `feature = "vtab"`
 pub struct VTabConnection(*mut ffi::sqlite3);
 
 impl VTabConnection {
@@ -160,8 +174,12 @@ impl VTabConnection {
     /// # Warning
     ///
     /// You should not need to use this function. If you do need to, please
-    /// [open an issue on the rusqlite repository](https://github.com/jgallagher/rusqlite/issues) and describe
-    /// your use case. This function is unsafe because it gives you raw access
+    /// [open an issue on the rusqlite repository](https://github.com/rusqlite/rusqlite/issues) and describe
+    /// your use case.
+    ///
+    /// # Safety
+    ///
+    /// This function is unsafe because it gives you raw access
     /// to the SQLite connection, and what you do with it could impact the
     /// safety of this `Connection`.
     pub unsafe fn handle(&mut self) -> *mut ffi::sqlite3 {
@@ -169,9 +187,13 @@ impl VTabConnection {
     }
 }
 
-/// Virtual table instance trait.
+/// `feature = "vtab"` Virtual table instance trait.
 ///
-/// Implementations must be like:
+/// # Safety
+///
+/// The first item in a struct implementing VTab must be
+/// `rusqlite::sqlite3_vtab`, and the struct must be `#[repr(C)]`.
+///
 /// ```rust,ignore
 /// #[repr(C)]
 /// struct MyTab {
@@ -182,8 +204,10 @@ impl VTabConnection {
 /// ```
 ///
 /// (See [SQLite doc](https://sqlite.org/c3ref/vtab.html))
-pub trait VTab: Sized {
+pub unsafe trait VTab<'vtab>: Sized {
+    /// Client data passed to `Connection::create_module`.
     type Aux;
+    /// Specific cursor implementation
     type Cursor: VTabCursor;
 
     /// Establish a new connection to an existing virtual table.
@@ -201,13 +225,13 @@ pub trait VTab: Sized {
 
     /// Create a new cursor used for accessing a virtual table.
     /// (See [SQLite doc](https://sqlite.org/vtab.html#the_xopen_method))
-    fn open(&self) -> Result<Self::Cursor>;
+    fn open(&'vtab self) -> Result<Self::Cursor>;
 }
 
-/// Non-eponymous virtual table instance trait.
+/// `feature = "vtab"` Non-eponymous virtual table instance trait.
 ///
 /// (See [SQLite doc](https://sqlite.org/c3ref/vtab.html))
-pub trait CreateVTab: VTab {
+pub trait CreateVTab<'vtab>: VTab<'vtab> {
     /// Create a new instance of a virtual table in response to a CREATE VIRTUAL
     /// TABLE statement. The `db` parameter is a pointer to the SQLite
     /// database connection that is executing the CREATE VIRTUAL TABLE
@@ -233,21 +257,53 @@ pub trait CreateVTab: VTab {
     }
 }
 
-bitflags! {
-    #[doc = "Index constraint operator."]
-    #[repr(C)]
-    pub struct IndexConstraintOp: ::std::os::raw::c_uchar {
-        const SQLITE_INDEX_CONSTRAINT_EQ    = 2;
-        const SQLITE_INDEX_CONSTRAINT_GT    = 4;
-        const SQLITE_INDEX_CONSTRAINT_LE    = 8;
-        const SQLITE_INDEX_CONSTRAINT_LT    = 16;
-        const SQLITE_INDEX_CONSTRAINT_GE    = 32;
-        const SQLITE_INDEX_CONSTRAINT_MATCH = 64;
+/// `feature = "vtab"` Index constraint operator.
+/// See [Virtual Table Constraint Operator Codes](https://sqlite.org/c3ref/c_index_constraint_eq.html) for details.
+#[derive(Debug, PartialEq)]
+#[allow(non_snake_case, non_camel_case_types, missing_docs)]
+#[non_exhaustive]
+pub enum IndexConstraintOp {
+    SQLITE_INDEX_CONSTRAINT_EQ,
+    SQLITE_INDEX_CONSTRAINT_GT,
+    SQLITE_INDEX_CONSTRAINT_LE,
+    SQLITE_INDEX_CONSTRAINT_LT,
+    SQLITE_INDEX_CONSTRAINT_GE,
+    SQLITE_INDEX_CONSTRAINT_MATCH,
+    SQLITE_INDEX_CONSTRAINT_LIKE,         // 3.10.0
+    SQLITE_INDEX_CONSTRAINT_GLOB,         // 3.10.0
+    SQLITE_INDEX_CONSTRAINT_REGEXP,       // 3.10.0
+    SQLITE_INDEX_CONSTRAINT_NE,           // 3.21.0
+    SQLITE_INDEX_CONSTRAINT_ISNOT,        // 3.21.0
+    SQLITE_INDEX_CONSTRAINT_ISNOTNULL,    // 3.21.0
+    SQLITE_INDEX_CONSTRAINT_ISNULL,       // 3.21.0
+    SQLITE_INDEX_CONSTRAINT_IS,           // 3.21.0
+    SQLITE_INDEX_CONSTRAINT_FUNCTION(u8), // 3.25.0
+}
+
+impl From<u8> for IndexConstraintOp {
+    fn from(code: u8) -> IndexConstraintOp {
+        match code {
+            2 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_EQ,
+            4 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_GT,
+            8 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_LE,
+            16 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_LT,
+            32 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_GE,
+            64 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_MATCH,
+            65 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_LIKE,
+            66 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_GLOB,
+            67 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_REGEXP,
+            68 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_NE,
+            69 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_ISNOT,
+            70 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_ISNOTNULL,
+            71 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_ISNULL,
+            72 => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_IS,
+            v => IndexConstraintOp::SQLITE_INDEX_CONSTRAINT_FUNCTION(v),
+        }
     }
 }
 
-/// Pass information into and receive the reply from the `VTab.best_index`
-/// method.
+/// `feature = "vtab"` Pass information into and receive the reply from the
+/// `VTab.best_index` method.
 ///
 /// (See [SQLite doc](http://sqlite.org/c3ref/index_info.html))
 pub struct IndexInfo(*mut ffi::sqlite3_index_info);
@@ -276,6 +332,7 @@ impl IndexInfo {
         unsafe { (*self.0).nOrderBy as usize }
     }
 
+    /// Information about what parameters to pass to `VTabCursor.filter`.
     pub fn constraint_usage(&mut self, constraint_idx: usize) -> IndexConstraintUsage<'_> {
         let constraint_usages = unsafe {
             slice::from_raw_parts_mut((*self.0).aConstraintUsage, (*self.0).nConstraint as usize)
@@ -304,8 +361,8 @@ impl IndexInfo {
         }
     }
 
-    /// Estimated number of rows returned
-    #[cfg(feature = "bundled")] // SQLite >= 3.8.2
+    /// Estimated number of rows returned.
+    #[cfg(feature = "modern_sqlite")] // SQLite >= 3.8.2
     pub fn set_estimated_rows(&mut self, estimated_rows: i64) {
         unsafe {
             (*self.0).estimatedRows = estimated_rows;
@@ -318,6 +375,7 @@ impl IndexInfo {
     // TODO sqlite3_vtab_collation (http://sqlite.org/c3ref/vtab_collation.html)
 }
 
+/// `feature = "vtab"`
 pub struct IndexConstraintIter<'a> {
     iter: slice::Iter<'a, ffi::sqlite3_index_constraint>,
 }
@@ -334,7 +392,7 @@ impl<'a> Iterator for IndexConstraintIter<'a> {
     }
 }
 
-/// WHERE clause constraint
+/// `feature = "vtab"` WHERE clause constraint.
 pub struct IndexConstraint<'a>(&'a ffi::sqlite3_index_constraint);
 
 impl IndexConstraint<'_> {
@@ -345,7 +403,7 @@ impl IndexConstraint<'_> {
 
     /// Constraint operator
     pub fn operator(&self) -> IndexConstraintOp {
-        IndexConstraintOp::from_bits_truncate(self.0.op)
+        IndexConstraintOp::from(self.0.op)
     }
 
     /// True if this constraint is usable
@@ -354,7 +412,8 @@ impl IndexConstraint<'_> {
     }
 }
 
-/// Information about what parameters to pass to `VTabCursor.filter`.
+/// `feature = "vtab"` Information about what parameters to pass to
+/// `VTabCursor.filter`.
 pub struct IndexConstraintUsage<'a>(&'a mut ffi::sqlite3_index_constraint_usage);
 
 impl IndexConstraintUsage<'_> {
@@ -369,6 +428,7 @@ impl IndexConstraintUsage<'_> {
     }
 }
 
+/// `feature = "vtab"`
 pub struct OrderByIter<'a> {
     iter: slice::Iter<'a, ffi::sqlite3_index_info_sqlite3_index_orderby>,
 }
@@ -385,7 +445,7 @@ impl<'a> Iterator for OrderByIter<'a> {
     }
 }
 
-/// A column of the ORDER BY clause.
+/// `feature = "vtab"` A column of the ORDER BY clause.
 pub struct OrderBy<'a>(&'a ffi::sqlite3_index_info_sqlite3_index_orderby);
 
 impl OrderBy<'_> {
@@ -400,7 +460,7 @@ impl OrderBy<'_> {
     }
 }
 
-/// Virtual table cursor trait.
+/// `feature = "vtab"` Virtual table cursor trait.
 ///
 /// Implementations must be like:
 /// ```rust,ignore
@@ -413,7 +473,7 @@ impl OrderBy<'_> {
 /// ```
 ///
 /// (See [SQLite doc](https://sqlite.org/c3ref/vtab_cursor.html))
-pub trait VTabCursor: Sized {
+pub unsafe trait VTabCursor: Sized {
     /// Begin a search of a virtual table.
     /// (See [SQLite doc](https://sqlite.org/vtab.html#the_xfilter_method))
     fn filter(&mut self, idx_num: c_int, idx_str: Option<&str>, args: &Values<'_>) -> Result<()>;
@@ -434,10 +494,12 @@ pub trait VTabCursor: Sized {
     fn rowid(&self) -> Result<i64>;
 }
 
-/// Context is used by `VTabCursor.column` to specify the cell value.
+/// `feature = "vtab"` Context is used by `VTabCursor.column` to specify the
+/// cell value.
 pub struct Context(*mut ffi::sqlite3_context);
 
 impl Context {
+    /// Set current cell value
     pub fn set_result<T: ToSql>(&mut self, value: &T) -> Result<()> {
         let t = value.to_sql()?;
         unsafe { set_result(self.0, &t) };
@@ -447,21 +509,24 @@ impl Context {
     // TODO sqlite3_vtab_nochange (http://sqlite.org/c3ref/vtab_nochange.html)
 }
 
-/// Wrapper to `VTabCursor.filter` arguments, the values requested by
-/// `VTab.best_index`.
+/// `feature = "vtab"` Wrapper to `VTabCursor.filter` arguments, the values
+/// requested by `VTab.best_index`.
 pub struct Values<'a> {
     args: &'a [*mut ffi::sqlite3_value],
 }
 
 impl Values<'_> {
+    /// Returns the number of values.
     pub fn len(&self) -> usize {
         self.args.len()
     }
 
+    /// Returns `true` if there is no value.
     pub fn is_empty(&self) -> bool {
         self.args.is_empty()
     }
 
+    /// Returns value at `idx`
     pub fn get<T: FromSql>(&self, idx: usize) -> Result<T> {
         let arg = self.args[idx];
         let value = unsafe { ValueRef::from_value(arg) };
@@ -472,7 +537,9 @@ impl Values<'_> {
             }
             FromSqlError::OutOfRange(i) => Error::IntegralValueOutOfRange(idx, i),
             #[cfg(feature = "i128_blob")]
-            FromSqlError::InvalidI128Size(_) => Error::InvalidColumnType(idx, value.data_type()),
+            FromSqlError::InvalidI128Size(_) => {
+                Error::InvalidColumnType(idx, idx.to_string(), value.data_type())
+            }
             #[cfg(feature = "uuid")]
             FromSqlError::InvalidUuidSize(_) => {
                 Error::FromSqlConversionFailure(idx, value.data_type(), Box::new(err))
@@ -483,7 +550,7 @@ impl Values<'_> {
     // `sqlite3_value_type` returns `SQLITE_NULL` for pointer.
     // So it seems not possible to enhance `ValueRef::from_value`.
     #[cfg(feature = "array")]
-    pub(crate) fn get_array(&self, idx: usize) -> Result<Option<array::Array>> {
+    fn get_array(&self, idx: usize) -> Result<Option<array::Array>> {
         use crate::types::Value;
         let arg = self.args[idx];
         let ptr = unsafe { ffi::sqlite3_value_pointer(arg, array::ARRAY_TYPE) };
@@ -499,6 +566,7 @@ impl Values<'_> {
         }
     }
 
+    /// Turns `Values` into an iterator.
     pub fn iter(&self) -> ValueIter<'_> {
         ValueIter {
             iter: self.args.iter(),
@@ -515,6 +583,7 @@ impl<'a> IntoIterator for &'a Values<'a> {
     }
 }
 
+/// `Values` iterator.
 pub struct ValueIter<'a> {
     iter: slice::Iter<'a, *mut ffi::sqlite3_value>,
 }
@@ -534,13 +603,14 @@ impl<'a> Iterator for ValueIter<'a> {
 }
 
 impl Connection {
-    /// Register a virtual table implementation.
+    /// `feature = "vtab"` Register a virtual table implementation.
     ///
-    /// Step 3 of [Creating New Virtual Table Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
-    pub fn create_module<T: VTab>(
+    /// Step 3 of [Creating New Virtual Table
+    /// Implementations](https://sqlite.org/vtab.html#creating_new_virtual_table_implementations).
+    pub fn create_module<'vtab, T: VTab<'vtab>>(
         &self,
         module_name: &str,
-        module: &Module<T>,
+        module: &'static Module<'vtab, T>,
         aux: Option<T::Aux>,
     ) -> Result<()> {
         self.db.borrow_mut().create_module(module_name, module, aux)
@@ -548,10 +618,10 @@ impl Connection {
 }
 
 impl InnerConnection {
-    fn create_module<T: VTab>(
+    fn create_module<'vtab, T: VTab<'vtab>>(
         &mut self,
         module_name: &str,
-        module: &Module<T>,
+        module: &'static Module<'vtab, T>,
         aux: Option<T::Aux>,
     ) -> Result<()> {
         let c_name = str_to_cstring(module_name)?;
@@ -582,7 +652,8 @@ impl InnerConnection {
     }
 }
 
-/// Escape double-quote (`"`) character occurences by doubling them (`""`).
+/// `feature = "vtab"` Escape double-quote (`"`) character occurences by
+/// doubling them (`""`).
 pub fn escape_double_quote(identifier: &str) -> Cow<'_, str> {
     if identifier.contains('"') {
         // escape quote by doubling them
@@ -591,7 +662,7 @@ pub fn escape_double_quote(identifier: &str) -> Cow<'_, str> {
         Borrowed(identifier)
     }
 }
-/// Dequote string
+/// `feature = "vtab"` Dequote string
 pub fn dequote(s: &str) -> &str {
     if s.len() < 2 {
         return s;
@@ -604,7 +675,7 @@ pub fn dequote(s: &str) -> &str {
         _ => s,
     }
 }
-/// The boolean can be one of:
+/// `feature = "vtab"` The boolean can be one of:
 /// ```text
 /// 1 yes true on
 /// 0 no false off
@@ -632,7 +703,7 @@ unsafe extern "C" fn free_boxed_value<T>(p: *mut c_void) {
     let _: Box<T> = Box::from_raw(p as *mut T);
 }
 
-unsafe extern "C" fn rust_create<T>(
+unsafe extern "C" fn rust_create<'vtab, T>(
     db: *mut ffi::sqlite3,
     aux: *mut c_void,
     argc: c_int,
@@ -641,9 +712,8 @@ unsafe extern "C" fn rust_create<T>(
     err_msg: *mut *mut c_char,
 ) -> c_int
 where
-    T: CreateVTab,
+    T: CreateVTab<'vtab>,
 {
-    use std::error::Error as StdError;
     use std::ffi::CStr;
 
     let mut conn = VTabConnection(db);
@@ -663,29 +733,29 @@ where
                     ffi::SQLITE_OK
                 } else {
                     let err = error_from_sqlite_code(rc, None);
-                    *err_msg = mprintf(err.description());
+                    *err_msg = alloc(&err.to_string());
                     rc
                 }
             }
             Err(err) => {
-                *err_msg = mprintf(err.description());
+                *err_msg = alloc(&err.to_string());
                 ffi::SQLITE_ERROR
             }
         },
         Err(Error::SqliteFailure(err, s)) => {
             if let Some(s) = s {
-                *err_msg = mprintf(&s);
+                *err_msg = alloc(&s);
             }
             err.extended_code
         }
         Err(err) => {
-            *err_msg = mprintf(err.description());
+            *err_msg = alloc(&err.to_string());
             ffi::SQLITE_ERROR
         }
     }
 }
 
-unsafe extern "C" fn rust_connect<T>(
+unsafe extern "C" fn rust_connect<'vtab, T>(
     db: *mut ffi::sqlite3,
     aux: *mut c_void,
     argc: c_int,
@@ -694,9 +764,8 @@ unsafe extern "C" fn rust_connect<T>(
     err_msg: *mut *mut c_char,
 ) -> c_int
 where
-    T: VTab,
+    T: VTab<'vtab>,
 {
-    use std::error::Error as StdError;
     use std::ffi::CStr;
 
     let mut conn = VTabConnection(db);
@@ -716,36 +785,35 @@ where
                     ffi::SQLITE_OK
                 } else {
                     let err = error_from_sqlite_code(rc, None);
-                    *err_msg = mprintf(err.description());
+                    *err_msg = alloc(&err.to_string());
                     rc
                 }
             }
             Err(err) => {
-                *err_msg = mprintf(err.description());
+                *err_msg = alloc(&err.to_string());
                 ffi::SQLITE_ERROR
             }
         },
         Err(Error::SqliteFailure(err, s)) => {
             if let Some(s) = s {
-                *err_msg = mprintf(&s);
+                *err_msg = alloc(&s);
             }
             err.extended_code
         }
         Err(err) => {
-            *err_msg = mprintf(err.description());
+            *err_msg = alloc(&err.to_string());
             ffi::SQLITE_ERROR
         }
     }
 }
 
-unsafe extern "C" fn rust_best_index<T>(
+unsafe extern "C" fn rust_best_index<'vtab, T>(
     vtab: *mut ffi::sqlite3_vtab,
     info: *mut ffi::sqlite3_index_info,
 ) -> c_int
 where
-    T: VTab,
+    T: VTab<'vtab>,
 {
-    use std::error::Error as StdError;
     let vt = vtab as *mut T;
     let mut idx_info = IndexInfo(info);
     match (*vt).best_index(&mut idx_info) {
@@ -757,15 +825,15 @@ where
             err.extended_code
         }
         Err(err) => {
-            set_err_msg(vtab, err.description());
+            set_err_msg(vtab, &err.to_string());
             ffi::SQLITE_ERROR
         }
     }
 }
 
-unsafe extern "C" fn rust_disconnect<T>(vtab: *mut ffi::sqlite3_vtab) -> c_int
+unsafe extern "C" fn rust_disconnect<'vtab, T>(vtab: *mut ffi::sqlite3_vtab) -> c_int
 where
-    T: VTab,
+    T: VTab<'vtab>,
 {
     if vtab.is_null() {
         return ffi::SQLITE_OK;
@@ -775,11 +843,10 @@ where
     ffi::SQLITE_OK
 }
 
-unsafe extern "C" fn rust_destroy<T>(vtab: *mut ffi::sqlite3_vtab) -> c_int
+unsafe extern "C" fn rust_destroy<'vtab, T>(vtab: *mut ffi::sqlite3_vtab) -> c_int
 where
-    T: CreateVTab,
+    T: CreateVTab<'vtab>,
 {
-    use std::error::Error as StdError;
     if vtab.is_null() {
         return ffi::SQLITE_OK;
     }
@@ -796,20 +863,19 @@ where
             err.extended_code
         }
         Err(err) => {
-            set_err_msg(vtab, err.description());
+            set_err_msg(vtab, &err.to_string());
             ffi::SQLITE_ERROR
         }
     }
 }
 
-unsafe extern "C" fn rust_open<T>(
+unsafe extern "C" fn rust_open<'vtab, T: 'vtab>(
     vtab: *mut ffi::sqlite3_vtab,
     pp_cursor: *mut *mut ffi::sqlite3_vtab_cursor,
 ) -> c_int
 where
-    T: VTab,
+    T: VTab<'vtab>,
 {
-    use std::error::Error as StdError;
     let vt = vtab as *mut T;
     match (*vt).open() {
         Ok(cursor) => {
@@ -824,7 +890,7 @@ where
             err.extended_code
         }
         Err(err) => {
-            set_err_msg(vtab, err.description());
+            set_err_msg(vtab, &err.to_string());
             ffi::SQLITE_ERROR
         }
     }
@@ -912,7 +978,6 @@ where
 /// Virtual table cursors can set an error message by assigning a string to
 /// `zErrMsg`.
 unsafe fn cursor_error<T>(cursor: *mut ffi::sqlite3_vtab_cursor, result: Result<T>) -> c_int {
-    use std::error::Error as StdError;
     match result {
         Ok(_) => ffi::SQLITE_OK,
         Err(Error::SqliteFailure(err, s)) => {
@@ -922,7 +987,7 @@ unsafe fn cursor_error<T>(cursor: *mut ffi::sqlite3_vtab_cursor, result: Result<
             err.extended_code
         }
         Err(err) => {
-            set_err_msg((*cursor).pVtab, err.description());
+            set_err_msg((*cursor).pVtab, &err.to_string());
             ffi::SQLITE_ERROR
         }
     }
@@ -934,13 +999,12 @@ unsafe fn set_err_msg(vtab: *mut ffi::sqlite3_vtab, err_msg: &str) {
     if !(*vtab).zErrMsg.is_null() {
         ffi::sqlite3_free((*vtab).zErrMsg as *mut c_void);
     }
-    (*vtab).zErrMsg = mprintf(err_msg);
+    (*vtab).zErrMsg = alloc(err_msg);
 }
 
 /// To raise an error, the `column` method should use this method to set the
 /// error message and return the error code.
 unsafe fn result_error<T>(ctx: *mut ffi::sqlite3_context, result: Result<T>) -> c_int {
-    use std::error::Error as StdError;
     match result {
         Ok(_) => ffi::SQLITE_OK,
         Err(Error::SqliteFailure(err, s)) => {
@@ -962,7 +1026,7 @@ unsafe fn result_error<T>(ctx: *mut ffi::sqlite3_context, result: Result<T>) -> 
         }
         Err(err) => {
             ffi::sqlite3_result_error_code(ctx, ffi::SQLITE_ERROR);
-            if let Ok(cstr) = str_to_cstring(err.description()) {
+            if let Ok(cstr) = str_to_cstring(&err.to_string()) {
                 ffi::sqlite3_result_error(ctx, cstr.as_ptr(), -1);
             }
             ffi::SQLITE_ERROR
@@ -970,19 +1034,17 @@ unsafe fn result_error<T>(ctx: *mut ffi::sqlite3_context, result: Result<T>) -> 
     }
 }
 
-// Space to hold this error message string must be obtained
-// from an SQLite memory allocation function.
-fn mprintf(err_msg: &str) -> *mut c_char {
-    let c_format = CString::new("%s").unwrap();
-    let c_err = CString::new(err_msg).unwrap();
-    unsafe { ffi::sqlite3_mprintf(c_format.as_ptr(), c_err.as_ptr()) }
+// Space to hold this string must be obtained
+// from an SQLite memory allocation function
+fn alloc(s: &str) -> *mut c_char {
+    crate::util::SqliteMallocString::from_str(s).into_raw()
 }
 
 #[cfg(feature = "array")]
 pub mod array;
 #[cfg(feature = "csvtab")]
 pub mod csvtab;
-#[cfg(feature = "bundled")]
+#[cfg(feature = "series")]
 pub mod series; // SQLite >= 3.9.0
 
 #[cfg(test)]

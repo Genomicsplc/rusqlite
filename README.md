@@ -1,24 +1,24 @@
 # Rusqlite
 
-[![Travis Build Status](https://api.travis-ci.org/jgallagher/rusqlite.svg?branch=master)](https://travis-ci.org/jgallagher/rusqlite)
-[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/jgallagher/rusqlite?branch=master&svg=true)](https://ci.appveyor.com/project/jgallagher/rusqlite)
-[![dependency status](https://deps.rs/repo/github/jgallagher/rusqlite/status.svg)](https://deps.rs/repo/github/jgallagher/rusqlite)
+[![Travis Build Status](https://api.travis-ci.org/rusqlite/rusqlite.svg?branch=master)](https://travis-ci.org/rusqlite/rusqlite)
+[![AppVeyor Build Status](https://ci.appveyor.com/api/projects/status/github/rusqlite/rusqlite?branch=master&svg=true)](https://ci.appveyor.com/project/rusqlite/rusqlite)
+[![Build Status](https://github.com/rusqlite/rusqlite/workflows/CI/badge.svg)](https://github.com/rusqlite/rusqlite/actions)
+[![dependency status](https://deps.rs/repo/github/rusqlite/rusqlite/status.svg)](https://deps.rs/repo/github/rusqlite/rusqlite)
 [![Latest Version](https://img.shields.io/crates/v/rusqlite.svg)](https://crates.io/crates/rusqlite)
+[![Gitter](https://badges.gitter.im/rusqlite.svg)](https://gitter.im/rusqlite/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge)
 [![Docs](https://docs.rs/rusqlite/badge.svg)](https://docs.rs/rusqlite)
+[![codecov](https://codecov.io/gh/rusqlite/rusqlite/branch/master/graph/badge.svg)](https://codecov.io/gh/rusqlite/rusqlite)
 
 Rusqlite is an ergonomic wrapper for using SQLite from Rust. It attempts to expose
 an interface similar to [rust-postgres](https://github.com/sfackler/rust-postgres).
 
 ```rust
-use rusqlite::types::ToSql;
-use rusqlite::{Connection, Result, NO_PARAMS};
-use time::Timespec;
+use rusqlite::{params, Connection, Result};
 
 #[derive(Debug)]
 struct Person {
     id: i32,
     name: String,
-    time_created: Timespec,
     data: Option<Vec<u8>>,
 }
 
@@ -29,32 +29,28 @@ fn main() -> Result<()> {
         "CREATE TABLE person (
                   id              INTEGER PRIMARY KEY,
                   name            TEXT NOT NULL,
-                  time_created    TEXT NOT NULL,
                   data            BLOB
                   )",
-        NO_PARAMS,
+        params![],
     )?;
     let me = Person {
         id: 0,
         name: "Steven".to_string(),
-        time_created: time::get_time(),
         data: None,
     };
     conn.execute(
-        "INSERT INTO person (name, time_created, data)
-                  VALUES (?1, ?2, ?3)",
-        &[&me.name as &ToSql, &me.time_created, &me.data],
+        "INSERT INTO person (name, data) VALUES (?1, ?2)",
+        params![me.name, me.data],
     )?;
 
-    let mut stmt = conn
-        .prepare("SELECT id, name, time_created, data FROM person")?;
-    let person_iter = stmt
-        .query_map(NO_PARAMS, |row| Ok(Person {
+    let mut stmt = conn.prepare("SELECT id, name, data FROM person")?;
+    let person_iter = stmt.query_map(params![], |row| {
+        Ok(Person {
             id: row.get(0)?,
             name: row.get(1)?,
-            time_created: row.get(2)?,
-            data: row.get(3)?,
-        }))?;
+            data: row.get(2)?,
+        })
+    })?;
 
     for person in person_iter {
         println!("Found person {:?}", person.unwrap());
@@ -107,7 +103,7 @@ features](https://doc.rust-lang.org/cargo/reference/manifest.html#the-features-s
 * [`array`](https://sqlite.org/carray.html), The `rarray()` Table-Valued Function.
 * `i128_blob` allows storing values of type `i128` type in SQLite databases. Internally, the data is stored as a 16 byte big-endian blob, with the most significant bit flipped, which allows ordering and comparison between different blobs storing i128s to work as expected.
 * `uuid` allows storing and retrieving `Uuid` values from the [`uuid`](https://docs.rs/uuid/) crate using blobs.
-* [`session`](https://sqlite.org/sessionintro.html), Session module extension.
+* [`session`](https://sqlite.org/sessionintro.html), Session module extension. Requires `buildtime_bindgen` feature.
 
 ## Notes on building rusqlite and libsqlite3-sys
 
@@ -118,13 +114,13 @@ declarations for SQLite's C API. By default, `libsqlite3-sys` attempts to find a
 You can adjust this behavior in a number of ways:
 
 * If you use the `bundled` feature, `libsqlite3-sys` will use the
-  [gcc](https://crates.io/crates/gcc) crate to compile SQLite from source and
+  [cc](https://crates.io/crates/cc) crate to compile SQLite from source and
   link against that. This source is embedded in the `libsqlite3-sys` crate and
-  is currently SQLite 3.27.2 (as of `rusqlite` 0.18.0 / `libsqlite3-sys`
-  0.14.0).  This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
-  ```
+  is currently SQLite 3.30.1 (as of `rusqlite` 0.21.0 / `libsqlite3-sys`
+  0.17.0).  This is probably the simplest solution to any build problems. You can enable this by adding the following in your `Cargo.toml` file:
+  ```toml
   [dependencies.rusqlite]
-  version = "0.18.0"
+  version = "0.21.0"
   features = ["bundled"]
   ```
 * You can set the `SQLITE3_LIB_DIR` to point to directory containing the SQLite
@@ -166,9 +162,40 @@ bundled version of SQLite. If you need other specific pregenerated binding
 versions, please file an issue. If you want to run `bindgen` at buildtime to
 produce your own bindings, use the `buildtime_bindgen` Cargo feature.
 
+If you enable the `modern_sqlite` feature, we'll use the bindings we would have
+included with the bundled build. You generally should have `buildtime_bindgen`
+enabled if you turn this on, as otherwise you'll need to keep the version of
+SQLite you link with in sync with what rusqlite would have bundled, (usually the
+most recent release of sqlite). Failing to do this will cause a runtime error.
+
+## Contributing
+
+Rusqlite has many features, and many of them impact the build configuration in
+incompatible ways. This is unfortunate, and makes testing changes hard.
+
+To help here: you generally should ensure that you run tests/lint for
+`--features bundled`, and `--features bundled-full session buildtime_bindgen`.
+
+If running bindgen is problematic for you, `--features bundled-full` enables
+bundled and all features which don't require binding generation, and can be used
+instead.
+
+### Checklist
+
+- Run `cargo fmt` to ensure your Rust code is correctly formatted.
+- Ensure `cargo clippy --all-targets --workspace --features bundled` passes without warnings.
+- Ensure `cargo test --all-targets --workspace --features bundled-full session buildtime_bindgen` reports no failures.
+- Ensure `cargo test --all-targets --workspace --features bundled` reports no failures.
+- Ensure `cargo test --all-targets --workspace --features bundled-full session buildtime_bindgen` reports no failures.
+
 ## Author
 
-John Gallagher, johnkgallagher@gmail.com
+Rusqlite is the product of hard work by a number of people. A list is available
+here: https://github.com/rusqlite/rusqlite/graphs/contributors
+
+## Community
+
+Currently there's a gitter channel set up for rusqlite [here](https://gitter.im/rusqlite/community).
 
 ## License
 

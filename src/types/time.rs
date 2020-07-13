@@ -1,5 +1,3 @@
-use time;
-
 use crate::types::{FromSql, FromSqlError, FromSqlResult, ToSql, ToSqlOutput, ValueRef};
 use crate::Result;
 
@@ -25,10 +23,10 @@ impl FromSql for time::Timespec {
                 match s.len() {
                     19 => time::strptime(s, CURRENT_TIMESTAMP_FMT),
                     _ => time::strptime(s, SQLITE_DATETIME_FMT).or_else(|err| {
-                        time::strptime(s, SQLITE_DATETIME_FMT_LEGACY).or_else(|_| Err(err))
+                        time::strptime(s, SQLITE_DATETIME_FMT_LEGACY).map_err(|_| err)
                     }),
                 }
-                .or_else(|err| Err(FromSqlError::Other(Box::new(err))))
+                .map_err(|err| FromSqlError::Other(Box::new(err)))
             })
             .map(|tm| tm.to_timespec())
     }
@@ -36,7 +34,6 @@ impl FromSql for time::Timespec {
 
 #[cfg(test)]
 mod test {
-    use super::time;
     use crate::{Connection, Result, NO_PARAMS};
 
     fn checked_memory_handle() -> Connection {

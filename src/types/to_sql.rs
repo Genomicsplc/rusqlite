@@ -7,6 +7,7 @@ use std::borrow::Cow;
 /// `ToSqlOutput` represents the possible output types for implementors of the
 /// `ToSql` trait.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum ToSqlOutput<'a> {
     /// A borrowed SQLite-representable value.
     Borrowed(ValueRef<'a>),
@@ -14,10 +15,12 @@ pub enum ToSqlOutput<'a> {
     /// An owned SQLite-representable value.
     Owned(Value),
 
-    /// A BLOB of the given length that is filled with zeroes.
+    /// `feature = "blob"` A BLOB of the given length that is filled with
+    /// zeroes.
     #[cfg(feature = "blob")]
     ZeroBlob(i32),
 
+    /// `feature = "array"`
     #[cfg(feature = "array")]
     Array(Array),
 }
@@ -84,13 +87,31 @@ impl ToSql for ToSqlOutput<'_> {
 
 /// A trait for types that can be converted into SQLite values.
 pub trait ToSql {
+    /// Converts Rust value to SQLite value
     fn to_sql(&self) -> Result<ToSqlOutput<'_>>;
 }
 
-impl ToSql for Box<dyn ToSql> {
+impl<T: ToSql + ToOwned + ?Sized> ToSql for Cow<'_, T> {
     fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        let derefed: &dyn ToSql = &**self;
-        derefed.to_sql()
+        self.as_ref().to_sql()
+    }
+}
+
+impl<T: ToSql + ?Sized> ToSql for Box<T> {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        self.as_ref().to_sql()
+    }
+}
+
+impl<T: ToSql + ?Sized> ToSql for std::rc::Rc<T> {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        self.as_ref().to_sql()
+    }
+}
+
+impl<T: ToSql + ?Sized> ToSql for std::sync::Arc<T> {
+    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
+        self.as_ref().to_sql()
     }
 }
 
@@ -182,12 +203,6 @@ impl<T: ToSql> ToSql for Option<T> {
     }
 }
 
-impl ToSql for Cow<'_, str> {
-    fn to_sql(&self) -> Result<ToSqlOutput<'_>> {
-        Ok(ToSqlOutput::from(self.as_ref()))
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::ToSql;
@@ -209,11 +224,77 @@ mod test {
     fn test_cow_str() {
         use std::borrow::Cow;
         let s = "str";
-        let cow = Cow::Borrowed(s);
+        let cow: Cow<str> = Cow::Borrowed(s);
         let r = cow.to_sql();
         assert!(r.is_ok());
-        let cow = Cow::Owned::<str>(String::from(s));
+        let cow: Cow<str> = Cow::Owned::<str>(String::from(s));
         let r = cow.to_sql();
+        assert!(r.is_ok());
+        // Ensure this compiles.
+        let _p: &[&dyn ToSql] = crate::params![cow];
+    }
+
+    #[test]
+    fn test_box_dyn() {
+        let s: Box<dyn ToSql> = Box::new("Hello world!");
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = ToSql::to_sql(&s);
+
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn test_box_deref() {
+        let s: Box<str> = "Hello world!".into();
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn test_box_direct() {
+        let s: Box<str> = "Hello world!".into();
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = ToSql::to_sql(&s);
+
+        assert!(r.is_ok());
+    }
+
+    #[test]
+    fn test_cells() {
+        use std::{rc::Rc, sync::Arc};
+
+        let source_str: Box<str> = "Hello world!".into();
+
+        let s: Rc<Box<str>> = Rc::new(source_str.clone());
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+        assert!(r.is_ok());
+
+        let s: Arc<Box<str>> = Arc::new(source_str.clone());
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+        assert!(r.is_ok());
+
+        let s: Arc<str> = Arc::from(&*source_str);
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+        assert!(r.is_ok());
+
+        let s: Arc<dyn ToSql> = Arc::new(source_str.clone());
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+        assert!(r.is_ok());
+
+        let s: Rc<str> = Rc::from(&*source_str);
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
+        assert!(r.is_ok());
+
+        let s: Rc<dyn ToSql> = Rc::new(source_str);
+        let _s: &[&dyn ToSql] = crate::params![s];
+        let r = s.to_sql();
         assert!(r.is_ok());
     }
 

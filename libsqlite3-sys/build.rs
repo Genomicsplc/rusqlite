@@ -4,31 +4,39 @@ use std::path::Path;
 fn main() {
     let out_dir = env::var("OUT_DIR").unwrap();
     let out_path = Path::new(&out_dir).join("bindgen.rs");
+    if cfg!(feature = "in_gecko") {
+        // When inside mozilla-central, we are included into the build with
+        // sqlite3.o directly, so we don't want to provide any linker arguments.
+        std::fs::copy("sqlite3/bindgen_bundled_version.rs", out_path)
+            .expect("Could not copy bindings to output directory");
+        return;
+    }
     if cfg!(feature = "sqlcipher") {
-        if cfg!(feature = "bundled") {
+        if cfg!(any(
+            feature = "bundled",
+            all(windows, feature = "bundled-windows")
+        )) {
             println!(
-                "cargo:warning={}",
-                "Builds with bundled SQLCipher are not supported. Searching for SQLCipher to link against. \
+                "cargo:warning=Builds with bundled SQLCipher are not supported. Searching for SQLCipher to link against. \
                  This can lead to issues if your version of SQLCipher is not up to date!");
         }
         build_linked::main(&out_dir, &out_path)
     } else {
         // This can't be `cfg!` without always requiring our `mod build_bundled` (and
         // thus `cc`)
-        #[cfg(feature = "bundled")]
+        #[cfg(any(feature = "bundled", all(windows, feature = "bundled-windows")))]
         {
             build_bundled::main(&out_dir, &out_path)
         }
-        #[cfg(not(feature = "bundled"))]
+        #[cfg(not(any(feature = "bundled", all(windows, feature = "bundled-windows"))))]
         {
             build_linked::main(&out_dir, &out_path)
         }
     }
 }
 
-#[cfg(feature = "bundled")]
+#[cfg(any(feature = "bundled", all(windows, feature = "bundled-windows")))]
 mod build_bundled {
-    use cc;
     use std::env;
     use std::path::Path;
 
@@ -67,11 +75,39 @@ mod build_bundled {
             .flag("-DSQLITE_ENABLE_RTREE")
             .flag("-DSQLITE_ENABLE_STAT2")
             .flag("-DSQLITE_ENABLE_STAT4")
-            .flag("-DSQLITE_HAVE_ISNAN")
             .flag("-DSQLITE_SOUNDEX")
             .flag("-DSQLITE_THREADSAFE=1")
             .flag("-DSQLITE_USE_URI")
-            .flag("-DHAVE_USLEEP=1");
+            .flag("-DHAVE_USLEEP=1")
+            .flag("-D_POSIX_THREAD_SAFE_FUNCTIONS") // cross compile with MinGW
+            .warnings(false);
+
+        if cfg!(feature = "with-asan") {
+            cfg.flag("-fsanitize=address");
+        }
+
+        // Older versions of visual studio don't support c99 (including isnan), which
+        // causes a build failure when the linker fails to find the `isnan`
+        // function. `sqlite` provides its own implmentation, using the fact
+        // that x != x when x is NaN.
+        //
+        // There may be other platforms that don't support `isnan`, they should be
+        // tested for here.
+        if cfg!(target_env = "msvc") {
+            use cc::windows_registry::{find_vs_version, VsVers};
+            let vs_has_nan = match find_vs_version() {
+                Ok(ver) => ver != VsVers::Vs12,
+                Err(_msg) => false,
+            };
+            if vs_has_nan {
+                cfg.flag("-DHAVE_ISNAN");
+            }
+        } else {
+            cfg.flag("-DHAVE_ISNAN");
+        }
+        if cfg!(not(target_os = "windows")) {
+            cfg.flag("-DHAVE_LOCALTIME_R");
+        }
         if cfg!(feature = "unlock_notify") {
             cfg.flag("-DSQLITE_ENABLE_UNLOCK_NOTIFY");
         }
@@ -91,6 +127,19 @@ mod build_bundled {
             cfg.flag(&format!("-DSQLITE_MAX_EXPR_DEPTH={}", limit));
         }
         println!("cargo:rerun-if-env-changed=SQLITE_MAX_EXPR_DEPTH");
+
+        if let Ok(extras) = env::var("LIBSQLITE3_FLAGS") {
+            for extra in extras.split_whitespace() {
+                if extra.starts_with("-D") || extra.starts_with("-U") {
+                    cfg.flag(extra);
+                } else if extra.starts_with("SQLITE_") {
+                    cfg.flag(&format!("-D{}", extra));
+                } else {
+                    panic!("Don't understand {} in LIBSQLITE3_FLAGS", extra);
+                }
+            }
+        }
+        println!("cargo:rerun-if-env-changed=LIBSQLITE3_FLAGS");
 
         cfg.compile("libsqlite3.a");
 
@@ -117,10 +166,12 @@ impl From<HeaderLocation> for String {
         match header {
             HeaderLocation::FromEnvironment => {
                 let prefix = env_prefix();
-                let mut header = env::var(format!("{}_INCLUDE_DIR", prefix)).expect(&format!(
-                    "{}_INCLUDE_DIR must be set if {}_LIB_DIR is set",
-                    prefix, prefix
-                ));
+                let mut header = env::var(format!("{}_INCLUDE_DIR", prefix)).unwrap_or_else(|_| {
+                    panic!(
+                        "{}_INCLUDE_DIR must be set if {}_LIB_DIR is set",
+                        prefix, prefix
+                    )
+                });
                 header.push_str("/sqlite3.h");
                 header
             }
@@ -131,8 +182,6 @@ impl From<HeaderLocation> for String {
 }
 
 mod build_linked {
-    use pkg_config;
-
     #[cfg(all(feature = "vcpkg", target_env = "msvc"))]
     extern crate vcpkg;
 
@@ -142,15 +191,18 @@ mod build_linked {
 
     pub fn main(_out_dir: &str, out_path: &Path) {
         let header = find_sqlite();
-        if cfg!(feature = "bundled") && !cfg!(feature = "buildtime_bindgen") {
-            // We can only get here if `bundled` and `sqlcipher` were both
-            // specified (and `builtime_bindgen` was not). In order to keep
-            // `rusqlite` relatively clean we hide the fact that `bundled` can
-            // be ignored in some cases, and just use the bundled bindings, even
-            // though the library we found might not match their version.
-            // Ideally we'd perform a version check here, but doing so is rather
-            // tricky, since we might not have access to executables (and
-            // moreover, we might be cross compiling).
+        if cfg!(any(
+            feature = "bundled_bindings",
+            feature = "bundled",
+            all(windows, feature = "bundled-windows")
+        )) && !cfg!(feature = "buildtime_bindgen")
+        {
+            // Generally means the `bundled_bindings` feature is enabled
+            // (there's also an edge case where we get here involving
+            // sqlcipher). In either case most users are better off with turning
+            // on buildtime_bindgen instead, but this is still supported as we
+            // have runtime version checks and there are good reasons to not
+            // want to run bindgen.
             std::fs::copy("sqlite3/bindgen_bundled_version.rs", out_path)
                 .expect("Could not copy bindings to output directory");
         } else {
@@ -159,7 +211,7 @@ mod build_linked {
     }
 
     fn find_link_mode() -> &'static str {
-        // If the user specifies SQLITE_STATIC (or SQLCIPHER_STATIC), do static
+        // If the user specifies SQLITE3_STATIC (or SQLCIPHER_STATIC), do static
         // linking, unless it's explicitly set to 0.
         match &env::var(format!("{}_STATIC", env_prefix())) {
             Ok(v) if v != "0" => "static",
@@ -173,18 +225,22 @@ mod build_linked {
         println!("cargo:rerun-if-env-changed={}_INCLUDE_DIR", env_prefix());
         println!("cargo:rerun-if-env-changed={}_LIB_DIR", env_prefix());
         println!("cargo:rerun-if-env-changed={}_STATIC", env_prefix());
-        if cfg!(target_os = "windows") {
-            println!("cargo:rerun-if-env-changed=PATH");
-        }
         if cfg!(all(feature = "vcpkg", target_env = "msvc")) {
             println!("cargo:rerun-if-env-changed=VCPKGRS_DYNAMIC");
         }
+
+        // dependents can access `DEP_SQLITE3_LINK_TARGET` (`sqlite3` being the
+        // `links=` value in our Cargo.toml) to get this value. This might be
+        // useful if you need to ensure whatever crypto library sqlcipher relies
+        // on is available, for example.
+        println!("cargo:link-target={}", link_lib);
+
         // Allow users to specify where to find SQLite.
         if let Ok(dir) = env::var(format!("{}_LIB_DIR", env_prefix())) {
             // Try to use pkg-config to determine link commands
             let pkgconfig_path = Path::new(&dir).join("pkgconfig");
             env::set_var("PKG_CONFIG_PATH", pkgconfig_path);
-            if let Err(_) = pkg_config::Config::new().probe(link_lib) {
+            if pkg_config::Config::new().probe(link_lib).is_err() {
                 // Otherwise just emit the bare minimum link commands.
                 println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
                 println!("cargo:rustc-link-search={}", dir);
@@ -213,7 +269,7 @@ mod build_linked {
                 // No env var set and pkg-config couldn't help; just output the link-lib
                 // request and hope that the library exists on the system paths. We used to
                 // output /usr/lib explicitly, but that can introduce other linking problems;
-                // see https://github.com/jgallagher/rusqlite/issues/207.
+                // see https://github.com/rusqlite/rusqlite/issues/207.
                 println!("cargo:rustc-link-lib={}={}", find_link_mode(), link_lib);
                 HeaderLocation::Wrapper
             }
@@ -253,7 +309,7 @@ mod bindings {
     use std::fs;
     use std::path::Path;
 
-    static PREBUILT_BINDGEN_PATHS: &'static [&'static str] = &[
+    static PREBUILT_BINDGEN_PATHS: &[&str] = &[
         "bindgen-bindings/bindgen_3.6.8.rs",
         #[cfg(feature = "min_sqlite_version_3_6_23")]
         "bindgen-bindings/bindgen_3.6.23.rs",
@@ -271,10 +327,8 @@ mod bindings {
 
 #[cfg(feature = "buildtime_bindgen")]
 mod bindings {
-    use bindgen;
-
-    use self::bindgen::callbacks::{IntKind, ParseCallbacks};
     use super::HeaderLocation;
+    use bindgen::callbacks::{IntKind, ParseCallbacks};
 
     use std::fs::OpenOptions;
     use std::io::Write;
@@ -290,6 +344,18 @@ mod bindings {
             } else {
                 None
             }
+        }
+    }
+
+    // Are we generating the bundled bindings? Used to avoid emitting things
+    // that would be problematic in bundled builds. This env var is set by
+    // `upgrade.sh`.
+    fn generating_bundled_bindings() -> bool {
+        // Hacky way to know if we're generating the bundled bindings
+        println!("cargo:rerun-if-env-changed=LIBSQLITE3_SYS_BUNDLING");
+        match std::env::var("LIBSQLITE3_SYS_BUNDLING") {
+            Ok(v) if v != "0" => true,
+            _ => false,
         }
     }
 
@@ -311,9 +377,38 @@ mod bindings {
             bindings = bindings.clang_arg("-DSQLITE_ENABLE_SESSION");
         }
 
+        // When cross compiling unless effort is taken to fix the issue, bindgen
+        // will find the wrong headers. There's only one header included by the
+        // amalgamated `sqlite.h`: `stdarg.h`.
+        //
+        // Thankfully, there's almost no case where rust code needs to use
+        // functions taking `va_list` (It's nearly impossible to get a `va_list`
+        // in Rust unless you get passed it by C code for some reason).
+        //
+        // Arguably, we should never be including these, but we include them for
+        // the cases where they aren't totally broken...
+        let target_arch = std::env::var("TARGET").unwrap();
+        let host_arch = std::env::var("HOST").unwrap();
+        let is_cross_compiling = target_arch != host_arch;
+
+        // Note that when generating the bundled file, we're essentially always
+        // cross compiling.
+        if generating_bundled_bindings() || is_cross_compiling {
+            // Get rid of va_list, as it's not
+            bindings = bindings
+                .blacklist_function("sqlite3_vmprintf")
+                .blacklist_function("sqlite3_vsnprintf")
+                .blacklist_function("sqlite3_str_vappendf")
+                .blacklist_type("va_list")
+                .blacklist_type("__builtin_va_list")
+                .blacklist_type("__gnuc_va_list")
+                .blacklist_type("__va_list_tag")
+                .blacklist_item("__GNUC_VA_LIST");
+        }
+
         bindings
             .generate()
-            .expect(&format!("could not run bindgen on header {}", header))
+            .unwrap_or_else(|_| panic!("could not run bindgen on header {}", header))
             .write(Box::new(&mut output))
             .expect("could not write output of bindgen");
         let mut output = String::from_utf8(output).expect("bindgen output was not UTF-8?!");
@@ -332,10 +427,10 @@ mod bindings {
             .write(true)
             .truncate(true)
             .create(true)
-            .open(out_path.clone())
-            .expect(&format!("Could not write to {:?}", out_path));
+            .open(out_path)
+            .unwrap_or_else(|_| panic!("Could not write to {:?}", out_path));
 
         file.write_all(output.as_bytes())
-            .expect(&format!("Could not write to {:?}", out_path));
+            .unwrap_or_else(|_| panic!("Could not write to {:?}", out_path));
     }
 }

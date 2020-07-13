@@ -5,6 +5,7 @@ use crate::{Connection, Result, Statement};
 use lru_cache::LruCache;
 use std::cell::RefCell;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 
 impl Connection {
     /// Prepare a SQL statement for execution, returning a previously prepared
@@ -54,7 +55,7 @@ impl Connection {
 
 /// Prepared statements LRU cache.
 #[derive(Debug)]
-pub struct StatementCache(RefCell<LruCache<String, RawStatement>>);
+pub struct StatementCache(RefCell<LruCache<Arc<str>, RawStatement>>);
 
 /// Cacheable statement.
 ///
@@ -83,7 +84,7 @@ impl Drop for CachedStatement<'_> {
     #[allow(unused_must_use)]
     fn drop(&mut self) {
         if let Some(stmt) = self.stmt.take() {
-            self.cache.cache_stmt(stmt.into());
+            self.cache.cache_stmt(unsafe { stmt.into_raw() });
         }
     }
 }
@@ -125,22 +126,33 @@ impl StatementCache {
         conn: &'conn Connection,
         sql: &str,
     ) -> Result<CachedStatement<'conn>> {
+        let trimmed = sql.trim();
         let mut cache = self.0.borrow_mut();
-        let stmt = match cache.remove(sql.trim()) {
+        let stmt = match cache.remove(trimmed) {
             Some(raw_stmt) => Ok(Statement::new(conn, raw_stmt)),
-            None => conn.prepare(sql),
+            None => conn.prepare(trimmed),
         };
-        stmt.map(|stmt| CachedStatement::new(stmt, self))
+        stmt.map(|mut stmt| {
+            stmt.stmt.set_statement_cache_key(trimmed);
+            CachedStatement::new(stmt, self)
+        })
     }
 
     // Return a statement to the cache.
     fn cache_stmt(&self, stmt: RawStatement) {
+        if stmt.is_null() {
+            return;
+        }
         let mut cache = self.0.borrow_mut();
         stmt.clear_bindings();
-        let sql = String::from_utf8_lossy(stmt.sql().to_bytes())
-            .trim()
-            .to_string();
-        cache.insert(sql, stmt);
+        if let Some(sql) = stmt.statement_cache_key() {
+            cache.insert(sql, stmt);
+        } else {
+            debug_assert!(
+                false,
+                "bug in statement cache code, statement returned to cache that without key"
+            );
+        }
     }
 
     fn flush(&self) {
@@ -338,5 +350,11 @@ mod test {
             );
         }
         assert_eq!(1, cache.len());
+    }
+
+    #[test]
+    fn test_empty_stmt() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.prepare_cached("").unwrap();
     }
 }
