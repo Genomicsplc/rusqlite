@@ -129,6 +129,7 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
                     0
                 },
             ));
+            #[cfg(feature = "vtab_estimated_rows")]
             info.set_estimated_rows(1000);
             let order_by_consumed = {
                 let mut order_bys = info.order_bys();
@@ -146,6 +147,7 @@ unsafe impl<'vtab> VTab<'vtab> for SeriesTab {
             }
         } else {
             info.set_estimated_cost(2_147_483_647f64);
+            #[cfg(feature = "vtab_estimated_rows")]
             info.set_estimated_rows(2_147_483_647);
         }
         info.set_idx_num(idx_num.bits());

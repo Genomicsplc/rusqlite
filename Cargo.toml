@@ -43,6 +43,14 @@ unlock_notify = ["libsqlite3-sys/unlock_notify"]
 # xSavepoint, xRelease and xRollbackTo: 3.7.7 (2011-06-23)
 vtab = ["libsqlite3-sys/min_sqlite_version_3_7_7", "lazy_static"]
 csvtab = ["csv", "vtab"]
+# estimatedRows in vtab sqlite3_index_info 3.8.2 and later
+vtab_estimated_rows = ["libsqlite3-sys/min_sqlite_version_3_8_2"]
+# idxFlags in vtab sqlite3_index_info 3.9.0 and later
+vtab_idx_flags = ["libsqlite3-sys/min_sqlite_version_3_9_0"]
+# colUsed in vtab sqlite3_index_info 3.10.0 and later
+vtab_col_used = ["libsqlite3-sys/min_sqlite_version_3_10_0"]
+# sqlite_vtab_collation in 3.22.0 and later
+vtab_collation = ["libsqlite3-sys/min_sqlite_version_3_22_0"]
 # pointer passing interfaces: 3.20.0
 array = ["vtab"]
 # session extension: 3.13.0

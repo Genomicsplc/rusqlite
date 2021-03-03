@@ -110,10 +110,12 @@ unsafe impl<'vtab> VTab<'vtab> for ArrayTab {
                 constraint_usage.set_omit(true);
             }
             info.set_estimated_cost(1f64);
+            #[cfg(feature = "vtab_estimated_rows")]
             info.set_estimated_rows(100);
             info.set_idx_num(1);
         } else {
             info.set_estimated_cost(2_147_483_647f64);
+            #[cfg(feature = "vtab_estimated_rows")]
             info.set_estimated_rows(2_147_483_647);
             info.set_idx_num(0);
         }
