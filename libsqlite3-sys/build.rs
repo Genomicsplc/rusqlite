@@ -164,7 +164,7 @@ impl From<HeaderLocation> for String {
                         prefix, prefix
                     )
                 });
-                header.push_str("/");
+                header.push('/');
                 header.push_str(header_file());
                 header
             }
@@ -574,7 +574,7 @@ use crate::sqlite3_api;
                 output.push_str(&wrapper);
             }
 
-            output.push_str("\n");
+            output.push('\n');
         }
 
         let mut file = OpenOptions::new()
