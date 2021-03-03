@@ -334,6 +334,20 @@ mod bindings {
         "bindgen-bindings/bindgen_3.7.7.rs",
         #[cfg(feature = "min_sqlite_version_3_7_16")]
         "bindgen-bindings/bindgen_3.7.16.rs",
+        #[cfg(feature = "min_sqlite_version_3_8_2")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.8.2+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_9_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.9.0+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_10_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.10.0+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_13_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.13.0+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_20_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.20.0+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_22_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs", // require 3.22.0+, but just use 3.26.0
+        #[cfg(feature = "min_sqlite_version_3_26_0")]
+        "bindgen-bindings/bindgen_3.26.0.rs",
     ];
 
     pub fn write_to_out_dir(_header: HeaderLocation, out_path: &Path) {
