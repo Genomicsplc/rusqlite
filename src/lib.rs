@@ -51,13 +51,6 @@
 
 pub use libsqlite3_sys as ffi;
 
-#[macro_use]
-extern crate bitflags;
-
-#[cfg(any(test, feature = "vtab"))]
-#[macro_use]
-extern crate lazy_static;
-
 use std::cell::RefCell;
 use std::convert;
 use std::default::Default;
