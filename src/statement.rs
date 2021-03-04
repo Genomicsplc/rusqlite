@@ -516,6 +516,7 @@ impl Statement<'_> {
         Ok(self.stmt.bind_parameter_index(name))
     }
 
+    /// Bind parameters
     #[inline]
     pub fn bind_parameters<P>(&mut self, params: P) -> Result<()>
     where
@@ -538,6 +539,7 @@ impl Statement<'_> {
         }
     }
 
+    /// Bind named parameters
     #[inline]
     pub fn bind_parameters_named<T: ?Sized + ToSql>(
         &mut self,
