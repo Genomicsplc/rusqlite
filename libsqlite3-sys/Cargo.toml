@@ -16,10 +16,10 @@ default = ["min_sqlite_version_3_6_8"]
 bundled = ["cc", "bundled_bindings"]
 bundled-windows = ["cc", "bundled_bindings"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
+loadable_extension = ["syn", "quote"]
+loadable_extension_embedded = ["loadable_extension"]
 sqlcipher = []
 min_sqlite_version_3_6_8 = ["pkg-config", "vcpkg"]
-min_sqlite_version_3_6_23 = ["pkg-config", "vcpkg"]
-min_sqlite_version_3_7_7 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_7_16 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_8_2 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_9_0 = ["pkg-config", "vcpkg"]
@@ -47,6 +47,8 @@ winsqlite3 = ["min_sqlite_version_3_7_16"]
 bindgen = { version = "0.57", optional = true, default-features = false, features = ["runtime"] }
 pkg-config = { version = "0.3", optional = true }
 cc = { version = "1.0", optional = true }
+syn = { version = "1.0", features = ["extra-traits", "full", "printing"], optional = true }
+quote = { version = "1.0", optional = true }
 
 [target.'cfg(target_env = "msvc")'.build-dependencies]
 vcpkg = { version = "0.2", optional = true }
