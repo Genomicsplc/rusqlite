@@ -517,7 +517,7 @@ impl Statement<'_> {
     }
 
     #[inline]
-    pub(crate) fn bind_parameters<P>(&mut self, params: P) -> Result<()>
+    pub fn bind_parameters<P>(&mut self, params: P) -> Result<()>
     where
         P: IntoIterator,
         P::Item: ToSql,
@@ -539,7 +539,7 @@ impl Statement<'_> {
     }
 
     #[inline]
-    pub(crate) fn bind_parameters_named<T: ?Sized + ToSql>(
+    pub fn bind_parameters_named<T: ?Sized + ToSql>(
         &mut self,
         params: &[(&str, &T)],
     ) -> Result<()> {
