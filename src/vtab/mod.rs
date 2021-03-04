@@ -17,10 +17,11 @@ use std::ptr;
 use std::slice;
 
 use crate::context::set_result;
-use crate::error::error_from_sqlite_code;
+use crate::error::{error_from_sqlite_code, to_sqlite_error};
 use crate::ffi;
 pub use crate::ffi::{sqlite3_vtab, sqlite3_vtab_cursor};
 use crate::types::{FromSql, FromSqlError, ToSql, ValueRef};
+use crate::util::alloc;
 use crate::{str_to_cstring, Connection, Error, InnerConnection, Result};
 
 // let conn: Connection = ...;
@@ -793,8 +794,7 @@ where
                     ffi::SQLITE_OK
                 } else {
                     let err = error_from_sqlite_code(rc, None);
-                    *err_msg = alloc(&err.to_string());
-                    rc
+                    to_sqlite_error(&err, err_msg)
                 }
             }
             Err(err) => {
@@ -802,16 +802,7 @@ where
                 ffi::SQLITE_ERROR
             }
         },
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(s) = s {
-                *err_msg = alloc(&s);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            *err_msg = alloc(&err.to_string());
-            ffi::SQLITE_ERROR
-        }
+        Err(err) => to_sqlite_error(&err, err_msg),
     }
 }
 
@@ -845,8 +836,7 @@ where
                     ffi::SQLITE_OK
                 } else {
                     let err = error_from_sqlite_code(rc, None);
-                    *err_msg = alloc(&err.to_string());
-                    rc
+                    to_sqlite_error(&err, err_msg)
                 }
             }
             Err(err) => {
@@ -854,16 +844,7 @@ where
                 ffi::SQLITE_ERROR
             }
         },
-        Err(Error::SqliteFailure(err, s)) => {
-            if let Some(s) = s {
-                *err_msg = alloc(&s);
-            }
-            err.extended_code
-        }
-        Err(err) => {
-            *err_msg = alloc(&err.to_string());
-            ffi::SQLITE_ERROR
-        }
+        Err(err) => to_sqlite_error(&err, err_msg),
     }
 }
 
@@ -1096,12 +1077,6 @@ unsafe fn result_error<T>(ctx: *mut ffi::sqlite3_context, result: Result<T>) -> 
             ffi::SQLITE_ERROR
         }
     }
-}
-
-// Space to hold this string must be obtained
-// from an SQLite memory allocation function
-fn alloc(s: &str) -> *mut c_char {
-    crate::util::SqliteMallocString::from_str(s).into_raw()
 }
 
 #[cfg(feature = "array")]
