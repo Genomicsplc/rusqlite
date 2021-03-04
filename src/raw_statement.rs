@@ -12,7 +12,7 @@ use std::os::raw::c_int;
 use std::ptr;
 use std::sync::Arc;
 
-// Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
+/// Private newtype for raw sqlite3_stmts that finalize themselves when dropped.
 #[derive(Debug)]
 pub struct RawStatement {
     ptr: *mut ffi::sqlite3_stmt,
