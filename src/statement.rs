@@ -793,7 +793,11 @@ impl Statement<'_> {
         Ok(())
     }
 
-    /// Safety: This is unsafe, because using `sqlite3_stmt` after the
+    /// Convert the Statement into a RawStatement
+    ///
+    /// # Safety
+    ///
+    /// This is unsafe, because using `sqlite3_stmt` after the
     /// connection has closed is illegal, but `RawStatement` does not enforce
     /// this, as it loses our protective `'conn` lifetime bound.
     #[inline]
