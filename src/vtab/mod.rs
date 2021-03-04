@@ -385,6 +385,7 @@ impl IndexInfo {
         }
     }
 
+    /// Set the mask of SQLITE_INDEX_SCAN_* flags 
     #[cfg(feature = "vtab_idx_flags")] // SQLite >= 3.9.0
     pub fn set_idx_flags(&mut self, idx_flags: c_int) {
         unsafe {
@@ -398,6 +399,9 @@ impl IndexInfo {
         unsafe { (*self.0).colUsed as u64 }
     }
 
+    /// Determine the collation for a virtual table constraint
+    /// https://sqlite.org/c3ref/vtab_collation.html
+    /// May only be called during the best_index call
     #[cfg(feature = "vtab_collation")] // SQLite >= 3.22.0
     pub fn collation(&self, constraint_idx: usize) -> Result<&str> {
         use std::ffi::CStr;
