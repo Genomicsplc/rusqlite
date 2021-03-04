@@ -398,6 +398,9 @@ impl IndexInfo {
         unsafe { (*self.0).colUsed as u64 }
     }
 
+    /// Determine the collation for a virtual table constraint
+    /// https://sqlite.org/c3ref/vtab_collation.html
+    /// May only be called during the best_index call
     #[cfg(feature = "vtab_collation")] // SQLite >= 3.22.0
     pub fn collation(&self, constraint_idx: usize) -> Result<&str> {
         use std::ffi::CStr;

@@ -32,7 +32,7 @@ pub struct RawStatement {
     statement_cache_key: Option<Arc<str>>,
 }
 
-#[allow(clippy::missing_safety_doc)]
+#[allow(clippy::missing_safety_doc, missing_docs)]
 impl RawStatement {
     #[inline]
     pub unsafe fn new(stmt: *mut ffi::sqlite3_stmt, tail: usize) -> RawStatement {
