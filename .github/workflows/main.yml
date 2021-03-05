@@ -37,8 +37,8 @@ jobs:
           targets: ${{ matrix.target }}
 
       - run: cargo build --features bundled --workspace --all-targets --verbose
-      - run: cargo test --features bundled --workspace --all-targets --verbose
-      - run: cargo test --features bundled --workspace --doc --verbose
+      - run: cargo test --features bundled --workspace --all-targets --exclude dummy-extension --verbose
+      - run: cargo test --features bundled --workspace --doc --exclude dummy-extension --verbose
 
       - name: Test Features
         # TODO: clang is installed on these -- but `bindgen` can't find it...
@@ -91,7 +91,7 @@ jobs:
         env:
           RUSTFLAGS: -Zsanitizer=address
           RUSTDOCFLAGS: -Zsanitizer=address
-          ASAN_OPTIONS: 'detect_stack_use_after_return=1:detect_leaks=0'
+          ASAN_OPTIONS: 'detect_stack_use_after_return=1'
           # Work around https://github.com/rust-lang/rust/issues/59125 by
           # disabling backtraces. In an ideal world we'd probably suppress the
           # leak sanitization, but we don't care about backtraces here, so long

@@ -14,12 +14,14 @@ categories = ["external-ffi-bindings"]
 [features]
 default = ["min_sqlite_version_3_6_8"]
 bundled = ["cc", "bundled_bindings"]
+# allows a dependency to use `bundled` only on windows
 bundled-windows = ["cc", "bundled_bindings"]
 buildtime_bindgen = ["bindgen", "pkg-config", "vcpkg"]
+loadable_extension = ["syn", "quote"]
+loadable_extension_embedded = ["loadable_extension"]
+# when `sqlcipher` is used, `bundled` and `loadable_extension` are ignored
 sqlcipher = []
 min_sqlite_version_3_6_8 = ["pkg-config", "vcpkg"]
-min_sqlite_version_3_6_23 = ["pkg-config", "vcpkg"]
-min_sqlite_version_3_7_7 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_7_16 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_8_2 = ["pkg-config", "vcpkg"]
 min_sqlite_version_3_9_0 = ["pkg-config", "vcpkg"]
@@ -42,11 +44,14 @@ with-asan = []
 wasm32-wasi-vfs = []
 # lowest version shipped with Windows 10.0.10586 was 3.8.8.3
 winsqlite3 = ["min_sqlite_version_3_7_16"]
+variadics = []
 
 [build-dependencies]
-bindgen = { version = "0.57", optional = true, default-features = false, features = ["runtime"] }
+bindgen = { version = "0.56", optional = true, default-features = false, features = ["runtime"] }
 pkg-config = { version = "0.3", optional = true }
 cc = { version = "1.0", optional = true }
+syn = { version = "1.0", features = ["extra-traits", "full", "printing"], optional = true }
+quote = { version = "1.0", optional = true }
 
 [target.'cfg(target_env = "msvc")'.build-dependencies]
 vcpkg = { version = "0.2", optional = true }

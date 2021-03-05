@@ -163,7 +163,7 @@ pub trait Params: Sealed {
     //
     // For now, just hide the function in the docs...
     #[doc(hidden)]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()>;
+    fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()>;
 }
 
 // Explicitly impl for empty array. Critically, for `conn.execute([])` to be
@@ -172,18 +172,18 @@ pub trait Params: Sealed {
 impl Sealed for [&dyn ToSql; 0] {}
 impl Params for [&dyn ToSql; 0] {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         // Note: Can't just return `Ok(())` — `Statement::bind_parameters`
         // checks that the right number of params were passed too.
         // TODO: we should have tests for `Error::InvalidParameterCount`...
-        stmt.bind_parameters(&[] as &[&dyn ToSql])
+        stmt.bind_parameters(crate::params![])
     }
 }
 
 impl Sealed for &[&dyn ToSql] {}
 impl Params for &[&dyn ToSql] {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self)
     }
 }
@@ -191,7 +191,7 @@ impl Params for &[&dyn ToSql] {
 impl Sealed for &[(&str, &dyn ToSql)] {}
 impl Params for &[(&str, &dyn ToSql)] {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         stmt.bind_parameters_named(self)
     }
 }
@@ -202,20 +202,19 @@ macro_rules! impl_for_array_ref {
         // avoid the compile time hit from making them all inline for now.
         impl<T: ToSql + ?Sized> Sealed for &[&T; $N] {}
         impl<T: ToSql + ?Sized> Params for &[&T; $N] {
-            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
                 stmt.bind_parameters(self)
             }
         }
         impl<T: ToSql + ?Sized> Sealed for &[(&str, &T); $N] {}
         impl<T: ToSql + ?Sized> Params for &[(&str, &T); $N] {
-            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
                 stmt.bind_parameters_named(self)
             }
         }
         impl<T: ToSql> Sealed for [T; $N] {}
         impl<T: ToSql> Params for [T; $N] {
-            #[inline]
-            fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+            fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
                 stmt.bind_parameters(&self)
             }
         }
@@ -352,7 +351,7 @@ where
     I::Item: ToSql,
 {
     #[inline]
-    fn __bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
+    fn bind_in(self, stmt: &mut Statement<'_>) -> Result<()> {
         stmt.bind_parameters(self.0)
     }
 }
