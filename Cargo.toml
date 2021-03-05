@@ -12,6 +12,7 @@ license = "MIT"
 categories = ["database"]
 
 [badges]
+travis-ci = { repository = "rusqlite/rusqlite" }
 appveyor = { repository = "rusqlite/rusqlite" }
 codecov = { repository = "rusqlite/rusqlite" }
 maintenance = { status = "actively-developed" }
@@ -20,33 +21,36 @@ maintenance = { status = "actively-developed" }
 name = "rusqlite"
 
 [workspace]
-members = ["libsqlite3-sys"]
+members = ["libsqlite3-sys", "dummy-extension"]
 
 [features]
 load_extension = []
 # hot-backup interface: 3.6.11 (2009-02-18)
-backup = ["libsqlite3-sys/min_sqlite_version_3_6_23"]
+backup = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 # sqlite3_blob_reopen: 3.7.4
-blob = ["libsqlite3-sys/min_sqlite_version_3_7_7"]
+blob = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 collation = []
 # sqlite3_create_function_v2: 3.7.3 (2010-10-08)
-functions = ["libsqlite3-sys/min_sqlite_version_3_7_7"]
+functions = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 # sqlite3_log: 3.6.23 (2010-03-09)
-trace = ["libsqlite3-sys/min_sqlite_version_3_6_23"]
+trace = ["libsqlite3-sys/min_sqlite_version_3_7_16"]
 bundled = ["libsqlite3-sys/bundled", "modern_sqlite"]
 buildtime_bindgen = ["libsqlite3-sys/buildtime_bindgen"]
+loadable_extension = ["libsqlite3-sys/loadable_extension"]
+loadable_extension_embedded = ["libsqlite3-sys/loadable_extension_embedded"]
 limits = []
 hooks = []
 i128_blob = ["byteorder"]
+# when `sqlcipher` is used, `bundled` and `loadable_extension` are ignored
 sqlcipher = ["libsqlite3-sys/sqlcipher"]
 unlock_notify = ["libsqlite3-sys/unlock_notify"]
 # xSavepoint, xRelease and xRollbackTo: 3.7.7 (2011-06-23)
-vtab = ["libsqlite3-sys/min_sqlite_version_3_7_7", "lazy_static"]
+vtab = ["modern_sqlite", "lazy_static"]
 csvtab = ["csv", "vtab"]
 # pointer passing interfaces: 3.20.0
-array = ["vtab"]
+array = ["modern_sqlite", "vtab"]
 # session extension: 3.13.0
-session = ["libsqlite3-sys/session", "hooks"]
+session = ["modern_sqlite", "libsqlite3-sys/session", "hooks"]
 # window functions: 3.25.0
 window = ["functions"]
 # 3.9.0
@@ -61,6 +65,15 @@ with-asan = ["libsqlite3-sys/with-asan"]
 column_decltype = []
 wasm32-wasi-vfs = ["libsqlite3-sys/wasm32-wasi-vfs"]
 winsqlite3 = ["libsqlite3-sys/winsqlite3"]
+# sqlite3_api_routines typedef stub: 3.20.0
+api_routines_stub = ["modern_sqlite"]
+# xShadowName: 3.26.0
+vtab_v3 = ["modern_sqlite", "vtab"]
+
+# Enable support for real variadics (if this is not enabled, va_list arguments will be represented by *mut void)
+# https://immunant.com/blog/2019/09/variadics/
+# https://github.com/rust-lang/rfcs/blob/master/text/2137-variadic.md
+variadics = ["libsqlite3-sys/variadics"]
 
 # Helper feature for enabling both `bundled` and most non-build-related
 # optional features or dependencies (except `session`). This is useful for

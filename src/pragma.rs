@@ -298,15 +298,15 @@ fn is_identifier(s: &str) -> bool {
 }
 
 fn is_identifier_start(c: char) -> bool {
-    ('A'..='Z').contains(&c) || c == '_' || ('a'..='z').contains(&c) || c > '\x7F'
+    (c >= 'A' && c <= 'Z') || c == '_' || (c >= 'a' && c <= 'z') || c > '\x7F'
 }
 
 fn is_identifier_continue(c: char) -> bool {
     c == '$'
-        || ('0'..='9').contains(&c)
-        || ('A'..='Z').contains(&c)
+        || (c >= '0' && c <= '9')
+        || (c >= 'A' && c <= 'Z')
         || c == '_'
-        || ('a'..='z').contains(&c)
+        || (c >= 'a' && c <= 'z')
         || c > '\x7F'
 }
 
@@ -379,7 +379,7 @@ mod test {
         let db = Connection::open_in_memory()?;
         let mut table_info = db.prepare("SELECT * FROM pragma_table_info(?)")?;
         let mut columns = Vec::new();
-        let mut rows = table_info.query(["sqlite_master"])?;
+        let mut rows = table_info.query(&["sqlite_master"])?;
 
         while let Some(row) = rows.next()? {
             let row = row;
