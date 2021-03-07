@@ -3,7 +3,7 @@ name = "dummy-extension"
 version = "0.0.1"
 authors = ["John Gallagher <jgallagher@bignerdranch.com>"]
 edition = "2018"
-repository = "https://github.com/jgallagher/rusqlite"
+repository = "https://github.com/rusqlite/rusqlite"
 description = "Dummy extension"
 license = "MIT"
 keywords = ["sqlite", "extension"]
@@ -18,3 +18,6 @@ path = ".."
 default-features = false
 features = ["loadable_extension", "vtab", "functions", "bundled"]
 version = "0.24.2"
+
+[workspace]
+members = []
